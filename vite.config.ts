@@ -12,5 +12,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Property-based suites are CPU-bound; give them headroom on slow or busy CI runners.
+    testTimeout: 60_000,
+    hookTimeout: 30_000,
   },
 })

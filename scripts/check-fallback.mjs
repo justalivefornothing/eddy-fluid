@@ -17,10 +17,14 @@ const waitForPort = (p, timeoutMs = 30000) =>
     const start = Date.now()
     const tryOnce = () => {
       const s = net.createConnection({ port: p, host: '127.0.0.1' })
-      s.once('connect', () => (s.destroy(), resolve()))
+      s.once('connect', () => {
+        s.destroy()
+        resolve()
+      })
       s.once('error', () => {
         s.destroy()
-        Date.now() - start > timeoutMs ? reject(new Error(`port ${p} never opened`)) : setTimeout(tryOnce, 300)
+        if (Date.now() - start > timeoutMs) reject(new Error(`port ${p} never opened`))
+        else setTimeout(tryOnce, 300)
       })
     }
     tryOnce()
