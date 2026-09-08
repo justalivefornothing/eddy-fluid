@@ -7,6 +7,7 @@ import { PalettePicker } from './controls/PalettePicker'
 import { PresetSection } from './controls/PresetSection'
 import { Slider, SteppedSlider } from './controls/Slider'
 import { Toggle } from './controls/Toggle'
+import { copyShareLink } from './useShareHash'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -42,6 +43,15 @@ export function Panel() {
       showToast('Screenshot saved as PNG')
     } catch (error) {
       showToast(`Screenshot failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const share = async () => {
+    try {
+      await copyShareLink(settings)
+      showToast('Share link copied to clipboard')
+    } catch {
+      showToast('Could not access the clipboard')
     }
   }
 
@@ -114,7 +124,7 @@ export function Panel() {
         </Section>
 
         <Section title="actions">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <button type="button" className="btn focus-ring" onClick={() => handle?.randomSplats()} disabled={!handle} title="Random splats (r)">
               splats
             </button>
@@ -123,6 +133,9 @@ export function Panel() {
             </button>
             <button type="button" className="btn focus-ring" onClick={() => handle?.clear()} disabled={!handle} title="Clear the canvas (x)">
               clear
+            </button>
+            <button type="button" className="btn focus-ring" onClick={share} title="Copy a link that reproduces these settings">
+              share link
             </button>
           </div>
         </Section>
