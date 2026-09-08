@@ -20,10 +20,11 @@ I wanted to understand a stable-fluids solver well enough to write every pass my
 - **Presets**: five built-in looks (Silk, Smoke, Ink, Plasma, Glitch) as typed constants, plus save / update / rename / delete of your own, persisted under the `eddy:v1:` namespace in `localStorage`.
 - **Random splats and idle mode**: an `r` key / button fires a burst; after three seconds of silence the fluid keeps itself alive (toggleable).
 - **Screenshot to PNG** without `preserveDrawingBuffer`: the display pass is re-rendered into a capture FBO and read back with `readPixels`.
+- **Audio-reactive mode**: an opt-in microphone `AnalyserNode` (1024-point FFT) measures 40-180 Hz bass energy every frame; bass swells the brush radius and a smoothed-history onset detector fires splats on every beat. Audio never leaves the device.
 - **Shareable links**: the "share link" button encodes the current settings as base64url in the URL hash (`#s=...`); opening it reproduces the look.
 - **HUD and fallbacks**: fps / frame-time pill, draw-call and format read-out, context-loss recovery, and a proper "WebGL2 not supported" state.
 
-Keyboard: `space` pause · `c` panel · `r` splats · `s` screenshot · `x` clear · `b` bloom · `Esc` close.
+Keyboard: `space` pause · `c` panel · `r` splats · `s` screenshot · `x` clear · `b` bloom · `m` microphone · `Esc` close.
 
 ## How it works
 
@@ -87,7 +88,7 @@ The `FRAGMENT_PREAMBLE` (`shaders/common.ts`) is prepended to every pass and hid
 
 ### Everything around the solver
 
-- `src/core/` is pure TypeScript with no DOM or WebGL: colour maths, palettes, the golden-ratio `ColorCycler`, preset (de)serialisation and sanitising, grid sizing, and a CPU `ReferenceFluid` that implements the exact same discretisation so the numerics can be unit-tested and benchmarked in Node.
+- `src/core/` is pure TypeScript with no DOM or WebGL: colour maths, palettes, the golden-ratio `ColorCycler`, preset (de)serialisation and sanitising, grid sizing, FFT band energy and beat detection, and a CPU `ReferenceFluid` that implements the exact same discretisation so the numerics can be unit-tested and benchmarked in Node.
 - `PointerTracker` accumulates each pointer's displacement between frames; the render loop drains it once per frame into splats with impulse `Δx / dt · splatForce / 60`.
 - Zustand holds settings/presets (persisted) and runtime stats (published at 2 Hz so the HUD does not re-render at 60 Hz). The React tree never re-renders on the animation loop.
 
@@ -143,14 +144,14 @@ npm ci
 npm run dev        # Vite dev server
 npm run build      # tsc -b (strict) + vite build -> dist/
 npm run preview    # serve dist/
-npm test           # vitest: 81 tests over the pure-TS core, GL plumbing and store
+npm test           # vitest: 87 tests over the pure-TS core, GL plumbing and store
 npm run lint       # oxlint
 npm run bench      # CPU reference solver + per-preset GPU work table
 node scripts/measure-fps.mjs --port 5400            # real GPU frame times in headless Edge (Windows path to Edge inside)
 node scripts/measure-fps.mjs --gpu swiftshader      # ... or forced software rendering
 ```
 
-Tests cover: preset serialisation round-trips (property-based), HSV↔RGB, palette arcs, splat colour cycling, grid/aspect sizing and DPR canvas sizing, the format-negotiation decision tree, pass order and shader assembly, multi-pointer tracking by `pointerId`, `localStorage` persistence under the `eddy:` namespace, and the reference solver (projection reduces divergence, dissipation drains energy, confinement adds it, curl of a rigid rotation is uniform).
+Tests cover: preset serialisation round-trips (property-based), HSV↔RGB, palette arcs, splat colour cycling, grid/aspect sizing and DPR canvas sizing, the format-negotiation decision tree, pass order and shader assembly, multi-pointer tracking by `pointerId`, `localStorage` persistence under the `eddy:` namespace, the bass-band / onset detector behind the audio mode, and the reference solver (projection reduces divergence, dissipation drains energy, confinement adds it, curl of a rigid rotation is uniform).
 
 Open `/#panel` to load with the controls open; `/#s=<base64url>` loads shared settings.
 
