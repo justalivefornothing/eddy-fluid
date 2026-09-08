@@ -149,6 +149,7 @@ npm run lint       # oxlint
 npm run bench      # CPU reference solver + per-preset GPU work table
 node scripts/measure-fps.mjs --port 5400            # real GPU frame times in headless Edge (Windows path to Edge inside)
 node scripts/measure-fps.mjs --gpu swiftshader      # ... or forced software rendering
+node scripts/check-fallback.mjs                     # forces getContext("webgl2") to null and asserts the fallback renders
 ```
 
 Tests cover: preset serialisation round-trips (property-based), HSV↔RGB, palette arcs, splat colour cycling, grid/aspect sizing and DPR canvas sizing, the format-negotiation decision tree, pass order and shader assembly, multi-pointer tracking by `pointerId`, `localStorage` persistence under the `eddy:` namespace, the bass-band / onset detector behind the audio mode, and the reference solver (projection reduces divergence, dissipation drains energy, confinement adds it, curl of a rigid rotation is uniform).
