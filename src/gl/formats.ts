@@ -5,7 +5,11 @@
  *  - rendering INTO RGBA16F/RG16F/R16F needs EXT_color_buffer_float
  *    (some ANGLE/D3D stacks expose the extension but still fail the FBO
  *    completeness check for RG/R, so every format is probed for real);
- *  - LINEAR filtering of half-float textures needs OES_texture_half_float_linear;
+ *  - LINEAR filtering of half-float textures is core in WebGL2 (the WebGL1
+ *    extension OES_texture_half_float_linear was promoted), but the decision
+ *    tree still carries a `halfFloatLinear` flag so the 4-tap shader-side
+ *    bilinear path is exercised by tests and stays available for a WebGL1
+ *    or buggy-driver future;
  *  - RGBA8 always works, always filters, but is unsigned 8-bit.
  *
  * `chooseFormatProfile` is a pure function of the observed capabilities so
@@ -118,7 +122,12 @@ export function chooseFormatProfile(caps: FormatCapabilities): FormatProfile {
  */
 export function negotiateFormats(gl: WebGL2RenderingContext): FormatProfile {
   const colorBufferFloat = gl.getExtension('EXT_color_buffer_float') !== null
-  const halfFloatLinear = gl.getExtension('OES_texture_half_float_linear') !== null
+  // OES_texture_half_float_linear is a WebGL1 extension that WebGL2 promoted
+  // to core: every 16F format is texture-filterable in GLES 3.0, so most
+  // WebGL2 implementations (ANGLE/D3D11, SwiftShader) do not even list the
+  // string. Treat the extension as present on any WebGL2 context and only
+  // consult the string as a belt-and-braces signal (32F linear stays optional).
+  const halfFloatLinear = isWebGL2(gl) || gl.getExtension('OES_texture_half_float_linear') !== null
 
   const canRenderTo = (fmt: TextureFormat): boolean => {
     const texture = gl.createTexture()
@@ -139,4 +148,9 @@ export function negotiateFormats(gl: WebGL2RenderingContext): FormatProfile {
   }
 
   return chooseFormatProfile({ colorBufferFloat, halfFloatLinear, canRenderTo })
+}
+
+/** True for a genuine WebGL2 context (as opposed to a WebGL1 context typed loosely). */
+export function isWebGL2(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  return typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext
 }
