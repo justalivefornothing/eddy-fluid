@@ -31,9 +31,12 @@ export interface SimHandle {
   randomSplats: (count?: number) => void
   clear: () => void
   screenshot: () => Promise<void>
+  /** Start/stop the microphone-driven splats. Resolves once the state settled. */
+  toggleAudio: () => Promise<void>
 }
 
 export type GpuStatus = 'pending' | 'ready' | 'unsupported' | 'error'
+export type AudioStatus = 'off' | 'starting' | 'on' | 'denied' | 'unsupported'
 
 interface RuntimeState {
   stats: FrameStats
@@ -41,6 +44,8 @@ interface RuntimeState {
   gpuStatus: GpuStatus
   gpuError: string | null
   toast: string | null
+  audioStatus: AudioStatus
+  setAudioStatus: (status: AudioStatus) => void
   setStats: (stats: FrameStats) => void
   setHandle: (handle: SimHandle | null) => void
   setGpuStatus: (status: GpuStatus, error?: string | null) => void
@@ -54,6 +59,8 @@ export const useRuntime = create<RuntimeState>()((set) => ({
   gpuStatus: 'pending',
   gpuError: null,
   toast: null,
+  audioStatus: 'off',
+  setAudioStatus: (audioStatus) => set({ audioStatus }),
   setStats: (stats) => set({ stats }),
   setHandle: (handle) => set({ handle }),
   setGpuStatus: (gpuStatus, gpuError = null) => set({ gpuStatus, gpuError }),

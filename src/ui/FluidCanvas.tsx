@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { AudioReactor } from '../audio/reactor'
 import { ColorCycler, driftHue } from '../core/cycler'
 import { mulberry32, randomSplat } from '../core/random'
 import { canvasBackingSize } from '../core/resolution'
@@ -157,6 +158,35 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
       sim.splat({ x: s.x, y: s.y, dx: s.dx, dy: s.dy, color: cycler.next(), radiusScale: 1.15 })
     }
   }
+  // ------------------------------------------------------------ audio
+  const reactor = new AudioReactor()
+  /** Smoothed bass energy (0..1) that swells pointer splats while the mic is on. */
+  let bassLevel = 0
+  const stopAudio = (): void => {
+    reactor.stop()
+    bassLevel = 0
+    useRuntime.getState().setAudioStatus('off')
+  }
+  const toggleAudio = async (): Promise<void> => {
+    const rt = useRuntime.getState()
+    if (reactor.active || rt.audioStatus === 'starting') {
+      stopAudio()
+      return
+    }
+    if (!AudioReactor.isSupported()) {
+      rt.setAudioStatus('unsupported')
+      return
+    }
+    rt.setAudioStatus('starting')
+    try {
+      await reactor.start()
+      useRuntime.getState().setAudioStatus('on')
+    } catch {
+      reactor.stop()
+      useRuntime.getState().setAudioStatus('denied')
+    }
+  }
+
   const handle = {
     randomSplats: (count?: number) => {
       burst(count ?? 4 + Math.floor(rng() * 4))
@@ -170,6 +200,7 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
       const capture = sim.captureFrame()
       await downloadCapture(capture)
     },
+    toggleAudio,
   }
   runtime.setHandle(handle)
 
@@ -199,6 +230,21 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
 
     sim.beginFrame()
 
+    // Microphone: bass swells the brush, onsets fire splats of their own.
+    const audio = reactor.sample(now)
+    if (audio) {
+      bassLevel += (audio.bass - bassLevel) * (audio.bass > bassLevel ? 0.5 : 0.08)
+      if (audio.beat && !paused) {
+        const count = 1 + Math.floor(audio.bass * 3)
+        for (let i = 0; i < count; i++) {
+          const s = randomSplat(rng, 3 + audio.bass * 6)
+          sim.splat({ x: s.x, y: s.y, dx: s.dx, dy: s.dy, color: cycler.next(), radiusScale: 1.2 + audio.bass * 2.2, dyeScale: 0.8 + audio.bass * 0.6 })
+        }
+        lastInputAt = now
+      }
+    }
+    const audioRadius = 1 + bassLevel * 1.6
+
     // Pointer strokes -> splats. Impulse is pointer speed scaled by splatForce/60.
     const strokes = tracker.drain(dt)
     if (strokes.length > 0) {
@@ -211,6 +257,7 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
           dx: stroke.dx * perSecond * gain,
           dy: stroke.dy * perSecond * gain,
           color: stroke.color,
+          radiusScale: audioRadius,
           dyeScale: stroke.fresh ? 0.6 : 1,
         })
       }
@@ -260,6 +307,7 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
     canvas.removeEventListener('pointercancel', onPointerEnd)
     canvas.removeEventListener('contextmenu', onContextMenu)
     if (useRuntime.getState().handle === handle) useRuntime.getState().setHandle(null)
+    if (reactor.active) stopAudio()
     sim.dispose()
   }
 }

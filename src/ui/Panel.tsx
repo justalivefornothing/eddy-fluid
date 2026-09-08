@@ -27,6 +27,7 @@ export function Panel() {
   const handle = useRuntime((s) => s.handle)
   const showToast = useRuntime((s) => s.showToast)
   const stats = useRuntime((s) => s.stats)
+  const audioStatus = useRuntime((s) => s.audioStatus)
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
@@ -120,6 +121,21 @@ export function Panel() {
 
         <Section title="behaviour">
           <Toggle label="idle splats" checked={settings.autoSplats} onChange={(v) => setSetting('autoSplats', v)} hint="Fire random splats after 3 s without input" />
+          <Toggle
+            label="audio reactive"
+            checked={audioStatus === 'on' || audioStatus === 'starting'}
+            onChange={() => void handle?.toggleAudio()}
+            shortcut="m"
+            hint="Listen to the microphone: bass swells the brush and every beat fires a splat"
+          />
+          {audioStatus !== 'off' ? (
+            <p className="-mt-1 text-[10.5px] leading-relaxed text-white/40" role="status">
+              {audioStatus === 'starting' && 'Waiting for microphone permission…'}
+              {audioStatus === 'on' && 'Listening — audio never leaves your device.'}
+              {audioStatus === 'denied' && 'Microphone access was denied. Allow it in the address bar and try again.'}
+              {audioStatus === 'unsupported' && 'This browser has no microphone / Web Audio support.'}
+            </p>
+          ) : null}
           <Toggle label="paused" checked={paused} onChange={setPaused} shortcut="space" />
         </Section>
 
@@ -142,7 +158,7 @@ export function Panel() {
       </div>
 
       <footer className="border-t border-white/[0.07] px-5 py-3 text-[10px] leading-relaxed tracking-wide text-white/35">
-        <span className="text-white/55">space</span> pause · <span className="text-white/55">c</span> panel · <span className="text-white/55">r</span> splats · <span className="text-white/55">s</span> screenshot · <span className="text-white/55">x</span> clear · <span className="text-white/55">b</span> bloom
+        <span className="text-white/55">space</span> pause · <span className="text-white/55">c</span> panel · <span className="text-white/55">r</span> splats · <span className="text-white/55">s</span> screenshot · <span className="text-white/55">x</span> clear · <span className="text-white/55">b</span> bloom · <span className="text-white/55">m</span> mic
         <span className="mt-1 block truncate text-white/25" title={stats.formatLabel}>
           {stats.formatLabel || ' '}
         </span>

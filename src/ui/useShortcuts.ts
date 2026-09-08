@@ -47,6 +47,10 @@ export function useShortcuts(): void {
         case 'B':
           settings.setSetting('bloom', !settings.settings.bloom)
           break
+        case 'm':
+        case 'M':
+          void handle?.toggleAudio()
+          break
         case 's':
         case 'S':
           if (handle) {
