@@ -1,4 +1,5 @@
 import { useId, type CSSProperties } from 'react'
+import { formatNumber } from '../../core/format'
 
 interface SliderProps {
   label: string
@@ -85,9 +86,4 @@ export function SteppedSlider({ label, value, options, onChange, format, hint }:
       />
     </div>
   )
-}
-
-export function formatNumber(value: number, step: number): string {
-  const decimals = step >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(step)))
-  return value.toFixed(decimals)
 }

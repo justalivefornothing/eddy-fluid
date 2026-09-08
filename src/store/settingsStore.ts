@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   BUILT_IN_PRESETS,
   DEFAULT_SETTINGS,
+  cleanPresetName,
   deserializePresets,
   isBuiltInPresetId,
   makePresetId,
@@ -81,11 +82,6 @@ function readPersistedPresets(storage: StorageLike | null): Preset[] {
 function findPreset(id: string, userPresets: readonly Preset[]): Preset | undefined {
   if (isBuiltInPresetId(id)) return BUILT_IN_PRESETS[id]
   return userPresets.find((p) => p.id === id)
-}
-
-export function cleanPresetName(name: string): string {
-  const trimmed = name.replace(/\s+/g, ' ').trim().slice(0, 40)
-  return trimmed.length > 0 ? trimmed : 'Untitled'
 }
 
 /**

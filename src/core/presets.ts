@@ -252,12 +252,23 @@ export function serializePresets(presets: readonly Preset[]): string {
   return JSON.stringify({ v: PRESET_FORMAT_VERSION, presets: presets.map((p) => ({ id: p.id, name: p.name, values: p.values })) })
 }
 
+export const PRESET_NAME_MAX_LENGTH = 40
+
+/**
+ * Normalise a user-typed preset name: collapse runs of whitespace, trim,
+ * cap the length, and never return an empty string.
+ */
+export function cleanPresetName(name: unknown): string {
+  if (typeof name !== 'string') return 'Untitled'
+  const cleaned = name.replace(/\s+/g, ' ').trim().slice(0, PRESET_NAME_MAX_LENGTH)
+  return cleaned.length > 0 ? cleaned : 'Untitled'
+}
+
 function presetFromWire(obj: unknown): Preset | null {
   if (typeof obj !== 'object' || obj === null) return null
   const o = obj as Record<string, unknown>
   if (typeof o.id !== 'string' || o.id.length === 0) return null
-  const name = typeof o.name === 'string' && o.name.trim().length > 0 ? o.name.trim().slice(0, 40) : 'Untitled'
-  return { id: o.id, name, values: sanitizeSettings(o.values) }
+  return { id: o.id, name: cleanPresetName(o.name), values: sanitizeSettings(o.values) }
 }
 
 /** Parse a single serialised preset; returns null on any malformed input. */
