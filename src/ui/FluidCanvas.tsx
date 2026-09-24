@@ -179,8 +179,7 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
     }
     rt.setAudioStatus('starting')
     try {
-      await reactor.start()
-      useRuntime.getState().setAudioStatus('on')
+      if (await reactor.start() && reactor.active) useRuntime.getState().setAudioStatus('on')
     } catch {
       reactor.stop()
       useRuntime.getState().setAudioStatus('denied')
@@ -307,7 +306,7 @@ function boot(canvas: HTMLCanvasElement): (() => void) | null {
     canvas.removeEventListener('pointercancel', onPointerEnd)
     canvas.removeEventListener('contextmenu', onContextMenu)
     if (useRuntime.getState().handle === handle) useRuntime.getState().setHandle(null)
-    if (reactor.active) stopAudio()
+    stopAudio()
     sim.dispose()
   }
 }

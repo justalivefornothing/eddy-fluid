@@ -1,6 +1,6 @@
 # Eddy
 
-**A real-time GPU Navier-Stokes fluid you smear around with mouse or finger: dye swirls, curls and fades at 60 fps, with a preset-driven glass control panel, bloom, and shareable looks.**
+**An interactive WebGL2 fluid playground: paint swirling dye with mouse or touch, tune the flow, and share your favourite look.**
 
 Raw WebGL2 + hand-written GLSL. No Three.js, no fluid libraries: the solver, the shaders, the framebuffer plumbing and the UI are all in this repo.
 
@@ -8,11 +8,11 @@ Raw WebGL2 + hand-written GLSL. No Three.js, no fluid libraries: the solver, the
 
 ## Why I built this
 
-I wanted to understand a stable-fluids solver well enough to write every pass myself, on the GPU, in a form that a reader can follow from the maths to the pixels. The interesting engineering is not any single shader; it is the plumbing that makes ten small shaders behave as one solver that stays stable at any frame rate, on any aspect ratio, on GPUs that disagree about which texture formats they will render to. Eddy is the result: a from-scratch semi-Lagrangian solver plus the smallest UI that lets you feel every knob.
+I wanted to understand a stable-fluids solver well enough to write every pass myself, on the GPU, in a form that a reader can follow from the maths to the pixels. The interesting engineering is not any single shader; it is the plumbing that joins the passes, bounds each timestep, preserves square cells across viewport shapes, and negotiates renderable texture formats. Eddy is the result: a semi-Lagrangian visual simulation plus a small UI that lets you feel every knob. It is a graphics playground, not a validated scientific fluid model.
 
 ## Features
 
-- **Stable-fluids solver on the GPU**: velocity, dye, pressure, divergence and curl live in ping-pong framebuffers (`RGBA16F`/`RG16F`/`R16F` when `EXT_color_buffer_float` is present, packed 16-bit-in-`RGBA8` fallback otherwise). Sim grid (128-512) and dye grid (512-2048) are sized independently of the DPR-aware canvas.
+- **Stable-fluids solver on the GPU**: velocity, dye, pressure, divergence and curl live in framebuffers (`RGBA16F`/`RG16F`/`R16F` when renderable, packed 16-bit-in-`RGBA8` fallback otherwise). Updated fields use ping-pong pairs. The fallback clamps signed fields to ±64 and stores dye in 8-bit colour, so it does not reproduce the half-float path exactly. Sim grid (128-512) and dye grid (512-2048) are sized independently of the DPR-aware canvas.
 - **Nine-plus fragment programs**: splat (Gaussian), advection (bilinear back-trace + frame-rate-independent dissipation), curl, vorticity confinement, divergence, Jacobi pressure (15-40 sweeps, warm-started), gradient subtraction, bloom prefilter / blur / final, display (height-field shading + ordered dither). Each is a single fullscreen-triangle draw.
 - **Multi-touch painting**: Pointer Events tracked by `pointerId`, so several fingers paint at once, each with its own colour. Impulse is proportional to pointer speed; a tap leaves a dot.
 - **Colour system**: golden-ratio hue cycling inside seven palettes (Spectrum, Nebula, Ember, Ocean, Mono, Sakura, Acid); long strokes drift slowly through the palette arc. The UI accent follows the palette.
@@ -60,18 +60,18 @@ flowchart LR
          ╰────────────────────────── sim grid, RG16F / R16F ──────────────────────────╯   ╰─ dye grid ─╯  ╰ ¼ res ╯  ╰ canvas ╯
 ```
 
-The pass list is data (`src/gl/pipeline.ts`), `FluidSim.step()` walks it, and a unit test pins the order, so this diagram cannot drift from the code.
+The descriptive pass list lives in `src/gl/pipeline.ts`; `FluidSim.step()` implements the sequence explicitly. Unit tests check the descriptive list and shader assembly, not the actual GPU draw sequence. Changes to either need a matching review of the runtime and this diagram.
 
 ### The solver, pass by pass
 
 | Pass | Program | What it does |
 | --- | --- | --- |
 | splat | `splat.ts` | Adds a Gaussian blob of velocity (into the field) and colour (into dye). Distance is measured in world units (short viewport side = 1), so splats are circles on any aspect. |
-| advect | `advection.ts` | Semi-Lagrangian: for each cell, trace back `dt · v` and bilinearly sample where the material came from. Unconditionally stable. Multiplies by `exp(-dissipation · dt)` so the fade is frame-rate independent. Compiled twice: once for the vec2 velocity field, once for RGB dye. |
+| advect | `advection.ts` | Semi-Lagrangian: for each cell, trace back `dt · v` and bilinearly sample where the material came from. Interpolation does not create new extrema, but introduces numerical diffusion and is not mass-conserving. Multiplies by `exp(-dissipation · dt)` using the bounded simulation timestep. Compiled twice: once for the vec2 velocity field, once for RGB dye. |
 | curl | `curl.ts` | `ω = ∂v/∂x − ∂u/∂y` by central differences. |
 | vorticity | `vorticity.ts` | Fedkiw-style confinement: `N = ∇|ω| / ‖∇|ω|‖`, force `ε · (N × ω)`, pushes energy back into the small eddies that numerical diffusion smears out. |
 | divergence | `divergence.ts` | `∇·v` with mirrored-normal walls at the viewport edge, so fluid never leaves the screen. |
-| clear | `clear.ts` | Scales last frame's pressure by the `pressure` knob: a warm start that makes 20 Jacobi sweeps look like 40. |
+| clear | `clear.ts` | Scales last frame's pressure by the `pressure` knob as a warm start. Its benefit depends on how the field changes; a fixed iteration count is not an accuracy guarantee. |
 | pressure | `pressure.ts` | One Jacobi relaxation of `∇²p = ∇·v`: `p = (pL + pR + pB + pT − div) / 4`, ping-ponged N times. `CLAMP_TO_EDGE` gives the Neumann wall condition for free. |
 | gradientSubtract | `gradientSubtract.ts` | `v −= ∇p`, leaving an (approximately) divergence-free field. |
 | bloomPrefilter / bloomBlur / bloomFinal | `bloom*.ts` | Soft-knee bright pass at ¼ dye resolution, a 4-level 3×3 tent pyramid walked down then back up with additive blending, then a Reinhard-style roll-off. |
@@ -88,13 +88,17 @@ The `FRAGMENT_PREAMBLE` (`shaders/common.ts`) is prepended to every pass and hid
 
 ### Everything around the solver
 
-- `src/core/` is pure TypeScript with no DOM or WebGL: colour maths, palettes, the golden-ratio `ColorCycler`, preset (de)serialisation and sanitising, grid sizing, FFT band energy and beat detection, and a CPU `ReferenceFluid` that implements the exact same discretisation so the numerics can be unit-tested and benchmarked in Node.
+- `src/core/` is pure TypeScript with no DOM or WebGL: colour maths, palettes, the golden-ratio `ColorCycler`, preset (de)serialisation and sanitising, grid sizing, FFT band energy and beat detection, and a CPU `ReferenceFluid` model of the numerical operations. It uses Float32 arrays and texel-space velocities; the GPU uses world-space velocities, separate dye resolution, and negotiated texture precision. CPU tests are not GPU parity tests.
 - `PointerTracker` accumulates each pointer's displacement between frames; the render loop drains it once per frame into splats with impulse `Δx / dt · splatForce / 60`.
 - Zustand holds settings/presets (persisted) and runtime stats (published at 2 Hz so the HUD does not re-render at 60 Hz). The React tree never re-renders on the animation loop.
 
-## Performance
+### Numerical and hardware limits
 
-Measured with `node scripts/measure-fps.mjs` (headless Edge, 3 s per preset with a continuous synthetic drag, so every frame includes a splat). The test machine is a laptop with an **Intel UHD integrated GPU** shared with other build jobs, and headless Chromium adds a software-compositing floor of 8-14 ms per frame at these sizes, so treat these as conservative lower bounds; a discrete GPU or a phone with a real compositor does much better.
+Each GPU step clamps elapsed time to at most `1/30` second without catch-up substeps. Below 30 rendered frames per second, simulated time advances more slowly than wall-clock time. Semi-Lagrangian transport is dissipative, and the fixed Jacobi solve only reduces divergence approximately; the CPU projection tests cover selected inputs, not all flows or GPU formats. Packed fields can saturate at ±64. Grid sizes follow aspect ratio but are not capped against the device's texture-size or memory limits, so extreme settings can fail allocation.
+
+## Historical performance measurements
+
+The figures below are historical measurements recorded for this repository, not results remeasured by the current unit-test/build checks. The original notes describe headless Edge, 3 s per preset with continuous synthetic dragging, and an **Intel UHD integrated GPU** shared with other build jobs. Browser compositing, background load, device, settings, and driver all affect these numbers. They are not a 60 fps guarantee or a lower bound for other hardware.
 
 | 1280 × 720, Intel UHD (ANGLE D3D11) | fps | mean ms | median ms |
 | --- | ---: | ---: | ---: |
@@ -114,7 +118,7 @@ Measured with `node scripts/measure-fps.mjs` (headless Edge, 3 s per preset with
 | Plasma | 32 | 30.8 | 22.1 |
 | Glitch | 125 | 8.0 | 7.0 |
 
-What the GPU is asked to do per frame at 1080p (`npm run bench`):
+Historical per-frame workload estimates at 1080p from `npm run bench` (not measured GPU durations):
 
 | preset | sim grid | dye grid | Jacobi | draw calls | Mtexels / frame |
 | --- | --- | --- | ---: | ---: | ---: |
@@ -125,9 +129,9 @@ What the GPU is asked to do per frame at 1080p (`npm run bench`):
 | Plasma | 455 × 256 | 1820 × 1024 | 26 | 42 | 8.0 |
 | Glitch | 228 × 128 | 910 × 512 | 15 | 31 | 3.5 |
 
-One tuning detail that mattered: WebGL2 promotes `OES_texture_half_float_linear` to core and most implementations do not list the string. Treating the missing string as "no linear filtering" had silently put the app on the 4-tap shader-bilinear path (20 taps per pixel in the shaded display pass, 36 in each bloom blur). Fixing the negotiation raised the paused baseline at 720p from 82 to 122 fps and Smoke from 51 to 70 fps on this GPU.
+One historical tuning observation: WebGL2 makes half-float linear filtering core, while most implementations do not list the WebGL1 `OES_texture_half_float_linear` extension string. Treating that missing string as "no linear filtering" selected the 4-tap shader-bilinear path. The original measurements reported a paused 720p baseline changing from 82 to 122 fps and Smoke from 51 to 70 fps after correcting negotiation; that comparison has not been revalidated here.
 
-CPU reference solver (`npm run bench`, Node 26, same discretisation as the shaders, single thread), included so the relative cost of each stage is visible:
+Historical CPU model timings (`npm run bench`, Node 26, single thread), included to illustrate the relative cost of each stage rather than predict GPU performance:
 
 | grid (16:9) | advect v | curl | vorticity | divergence | 1 Jacobi | ∇p | advect dye | full step (24 Jacobi) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -135,7 +139,7 @@ CPU reference solver (`npm run bench`, Node 26, same discretisation as the shade
 | 228 × 128 | 1.07 | 0.26 | 1.61 | 0.26 | 0.72 | 0.47 | 2.84 | 13.6 ms |
 | 455 × 256 | 3.35 | 0.93 | 3.74 | 1.41 | 1.53 | 0.92 | 5.19 | 44.0 ms |
 
-The Jacobi loop is 60-75 % of a frame at default settings, which is why `pressureIterations` and the warm-start `pressure` knob are the first things to reach for on a slow device. Per-frame TypeScript (colour cycling, pointer drain) is well under 0.2 ms.
+The historical CPU timings put substantial work in the Jacobi loop. Lowering resolution or `pressureIterations` reduces work, but also changes the result. Measure the actual browser/device workload before choosing settings; these tables do not establish a per-frame GPU or TypeScript timing budget.
 
 ## Run, test, bench
 
@@ -144,15 +148,14 @@ npm ci
 npm run dev        # Vite dev server
 npm run build      # tsc -b (strict) + vite build -> dist/
 npm run preview    # serve dist/
-npm test           # vitest: 87 tests over the pure-TS core, GL plumbing and store
+npm test           # vitest: core, format decisions, shader assembly, store and mocked audio lifecycle
 npm run lint       # oxlint
 npm run bench      # CPU reference solver + per-preset GPU work table
-node scripts/measure-fps.mjs --port 5400            # real GPU frame times in headless Edge (Windows path to Edge inside)
-node scripts/measure-fps.mjs --gpu swiftshader      # ... or forced software rendering
-node scripts/check-fallback.mjs                     # forces getContext("webgl2") to null and asserts the fallback renders
 ```
 
-Tests cover: preset serialisation round-trips (property-based), HSV↔RGB, palette arcs, splat colour cycling, grid/aspect sizing and DPR canvas sizing, the format-negotiation decision tree, pass order and shader assembly, multi-pointer tracking by `pointerId`, `localStorage` persistence under the `eddy:` namespace, the bass-band / onset detector behind the audio mode, and the reference solver (projection reduces divergence, dissipation drains energy, confinement adds it, curl of a rigid rotation is uniform).
+Tests cover: preset serialisation round-trips (property-based), HSV↔RGB, palette arcs, splat colour cycling, grid/aspect sizing and DPR canvas sizing, the format-negotiation decision tree, the descriptive pass order and shader assembly, multi-pointer tracking by `pointerId`, `localStorage` persistence under the `eddy:` namespace, bass-band / onset detection, mocked microphone cancellation and cleanup, and the CPU model (projection reduces divergence for the tested input, dissipation drains energy, confinement adds it, curl of a rigid rotation is uniform). They do not compile GLSL on a live GPU or exercise real microphone permission dialogs.
+
+`scripts/measure-fps.mjs` and `scripts/check-fallback.mjs` are historical Windows-only helpers, not portable checks installed by `npm ci`: they reference an external Playwright installation and a fixed Edge path. Their cleanup also terminates the process listening on the selected port. Review and adapt those helpers before running them; neither is part of `npm test` or `npm run build`.
 
 Open `/#panel` to load with the controls open; `/#s=<base64url>` loads shared settings.
 
