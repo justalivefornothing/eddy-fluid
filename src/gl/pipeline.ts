@@ -1,7 +1,7 @@
 /**
- * Declarative description of one simulation frame. `FluidSim.step()` walks
- * exactly this list; keeping it as data means the README diagram, the tests
- * and the runtime can never drift apart.
+ * Descriptive order of one simulation frame. `FluidSim.step()` implements
+ * the sequence explicitly; changes need to be checked against this list
+ * and the README because the runtime does not execute this data.
  */
 export const SIM_PASS_ORDER = [
   'splat',
